@@ -9,13 +9,15 @@ from odoo import api, fields, models
 class StockPicking(models.Model):
     _inherit = "stock.picking"
 
+
     @api.model
-    def default_get(self, fields_list):
-        defaults = super(StockPicking, self).default_get(fields_list)
+    def create(self, vals):
         assign_number = self.env.company.stock_assign_number_in_process
-        if assign_number:
-            defaults["name"] = f"Draft-{fields.Datetime.now().timestamp()}"
-        return defaults
+        if assign_number and self.env.company.draft_picking_sequence_id:
+            vals['name'] = f"{self.env.company.draft_picking_sequence_id.next_by_id()}"        
+        res =  super().create(vals)
+        
+        return res
 
     def _action_done(self):
         """Assign number to pickings that are from a company with this setting.
@@ -27,20 +29,15 @@ class StockPicking(models.Model):
         """
         self._check_company()
         for picking in self:
+            draft_sequence_prefix = (
+                picking.company_id.draft_picking_sequence_id 
+                and picking.company_id.draft_picking_sequence_id.prefix
+            ) or ""
             if (
                 picking.picking_type_id.sequence_id
                 and picking.company_id.stock_assign_number_in_process
-                and (picking.name.startswith("Draft-") or picking.name == "/")
+                and picking.company_id.draft_picking_sequence_id
+                and (picking.name.startswith(draft_sequence_prefix) or picking.name == "/")
             ):
                 picking.name = picking.picking_type_id.sequence_id.next_by_id()
         return super()._action_done()
-
-    def _create_backorder(self):
-        backorders = super()._create_backorder()
-        for picking in backorders:
-            if (
-                picking.name == "/"
-                and picking.company_id.stock_assign_number_in_process
-            ):
-                picking.name = f"Draft-{fields.Datetime.now().timestamp()}"
-        return backorders
