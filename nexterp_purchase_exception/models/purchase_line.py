@@ -4,7 +4,7 @@
 
 import html
 
-from odoo import api, fields, models
+from odoo import api, fields, models, _
 
 
 class PurchaseOrderLine(models.Model):
@@ -15,6 +15,7 @@ class PurchaseOrderLine(models.Model):
         "exception.rule", string="Exceptions", copy=False, readonly=True
     )
     exceptions_summary = fields.Html(
+        string="Exceptions Summary",
         readonly=True, compute="_compute_exceptions_summary"
     )
 
@@ -25,7 +26,7 @@ class PurchaseOrderLine(models.Model):
                 rec.exceptions_summary = rec._get_exception_summary()
             else:
                 rec.exceptions_summary = False
-
+    
     def _get_exception_summary(self):
         return "<ul>%s</ul>" % "".join(
             [
