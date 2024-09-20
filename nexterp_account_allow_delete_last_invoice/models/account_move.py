@@ -1,6 +1,6 @@
 # Copyright (C) 2022 NextERP Romania SRL
 # License OPL-1.0 or later
-# (https://www.odoo.com/documentation/user/16.0/legal/licenses/licenses.html#).
+# (https://www.odoo.com/documentation/user/17.0/legal/licenses/licenses.html#).
 
 from odoo import models
 
@@ -10,7 +10,7 @@ class AccountMove(models.Model):
 
     def unlink(self):
         for move in self:
-            highest_name = move._get_last_sequence(lock=False)
+            highest_name = move._get_last_sequence()
             if (
                 move.highest_name == highest_name
                 and move.company_id.account_allow_delete_last_invoice
@@ -19,4 +19,4 @@ class AccountMove(models.Model):
                     move.name = "/"
                     move.posted_before = False
                     move.state = "draft"
-        return super(AccountMove, self).unlink()
+        return super().unlink()

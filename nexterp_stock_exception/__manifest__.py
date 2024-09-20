@@ -8,12 +8,12 @@
     "version": "17.0.1.0.0",
     "category": "Generic Modules/Stock",
     "author": "NextERP Romania",
-    "website": "https://nexterp.ro",
+    "website": "https://www.nexterp.ro",
     "depends": ["stock_exception"],
     "license": "AGPL-3",
     "data": [
         "views/stock_view.xml",
     ],
-    "installable": True,
+    "installable": False,
     "maintainers": ["feketemihai"],
 }

@@ -1,6 +1,6 @@
 # Copyright (C) 2024 NextERP Romania SRL
 # License OPL-1.0 or later
-# (https://www.odoo.com/documentation/user/16.0/legal/licenses/licenses.html#).
+# (https://www.odoo.com/documentation/user/17.0/legal/licenses/licenses.html#).
 
 from odoo import fields, models
 from odoo.tools.sql import column_exists, create_column
@@ -8,7 +8,6 @@ from odoo.tools.sql import column_exists, create_column
 
 class SaleOrderLine(models.Model):
     _inherit = "sale.order.line"
-    _name = "sale.order.line"
 
     is_inter_company = fields.Boolean(
         related="order_id.is_inter_company", store=True, readonly=True, index=True
@@ -21,9 +20,7 @@ class SaleOrderLine(models.Model):
         """
         if not column_exists(self.env.cr, "sale_order_line", "is_inter_company"):
             create_column(self.env.cr, "sale_order_line", "is_inter_company", "boolean")
-            company_partners = self.env["res.company"].search([]).mapped("partner_id")
-            company_partners.mapped("id")
-            company_partners.mapped("vat")
+            # pylint: disable=E8103
             self.env.cr.execute(
                 """
                 UPDATE sale_order_line sol

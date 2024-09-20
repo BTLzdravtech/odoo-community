@@ -1,6 +1,6 @@
 # Copyright (C) 2024 NextERP Romania SRL
 # License OPL-1.0 or later
-# (https://www.odoo.com/documentation/user/16.0/legal/licenses/licenses.html#).
+# (https://www.odoo.com/documentation/user/17.0/legal/licenses/licenses.html#).
 
 from odoo import fields, models
 from odoo.tools.sql import column_exists, create_column
@@ -8,7 +8,6 @@ from odoo.tools.sql import column_exists, create_column
 
 class AccountMoveLine(models.Model):
     _inherit = "account.move.line"
-    _name = "account.move.line"
 
     is_inter_company = fields.Boolean(
         related="move_id.is_inter_company", store=True, readonly=True, index=True
@@ -21,6 +20,7 @@ class AccountMoveLine(models.Model):
         """
         if not column_exists(self.env.cr, "account_move", "is_inter_company"):
             create_column(self.env.cr, "account_move", "is_inter_company", "boolean")
+            # pylint: disable=E8103
             self.env.cr.execute(
                 """
                 UPDATE account_move_line aml

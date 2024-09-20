@@ -1,6 +1,6 @@
 # Copyright (C) 2024 NextERP Romania SRL
 # License OPL-1.0 or later
-# (https://www.odoo.com/documentation/user/16.0/legal/licenses/licenses.html#).
+# (https://www.odoo.com/documentation/user/17.0/legal/licenses/licenses.html#).
 
 from odoo import fields, models
 
@@ -8,7 +8,7 @@ from odoo import fields, models
 class SaleReport(models.Model):
     _inherit = "sale.report"
 
-    is_inter_company = fields.Boolean(readonly=0)
+    is_inter_company = fields.Boolean(readonly=False)
 
     def _select_additional_fields(self):
         res = super()._select_additional_fields()
