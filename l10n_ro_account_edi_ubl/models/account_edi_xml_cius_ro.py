@@ -126,9 +126,9 @@ class AccountEdiXmlCIUSRO(models.AbstractModel):
             )
         result_list = []
         if vals_list["vals"].get("note_vals"):
-            if len(vals_list["vals"]["note_vals"][0]) > 100:
-                split_strings = self.split_string(vals_list["vals"]["note_vals"][0])
-                for _index, split_str in enumerate(split_strings):
+            if len(vals_list["vals"]["note_vals"][0]['note']) > 300:
+                split_strings = self.split_string(vals_list["vals"]["note_vals"][0]['note'])
+                for _index, split_str in enumerate(split_strings[:20]):
                     result_list.append(split_str)
         if result_list:
             vals_list["vals"]["note_vals"] = result_list
@@ -149,9 +149,6 @@ class AccountEdiXmlCIUSRO(models.AbstractModel):
     def _import_fill_invoice_line_form(self, tree, invoice_line, qty_factor):
         vat_on_payment = False
         if invoice_line.partner_id.l10n_ro_vat_on_payment:
-            invoice_line.move_id.fiscal_position_id = (
-                invoice_line.partner_id.property_account_position_id
-            )
             vat_on_payment = True
         res = super()._import_fill_invoice_line_form(tree, invoice_line, qty_factor)
         if vat_on_payment:
@@ -219,25 +216,17 @@ class AccountEdiXmlCIUSRO(models.AbstractModel):
         zip_code=False,
     ):
         """Update method to set the partner as a company, not individual"""
+
         res = super()._import_retrieve_and_fill_partner(
-            invoice,
-            name,
-            phone,
-            mail,
-            vat,
-            country_code,
-            peppol_eas,
-            peppol_endpoint,
-            street,
-            street2,
-            city,
-            zip_code,
+            invoice, name, phone, mail, vat, country_code, peppol_eas, peppol_endpoint
         )
         if country_code == "RO":
             if not invoice.partner_id.is_company and name and vat:
                 invoice.partner_id.is_company = True
                 invoice.partner_id.ro_vat_change()
                 invoice.partner_id.check_vat_on_payment()
+            if invoice.partner_id:
+                invoice._onchange_partner_id()
         return res
 
     def _import_retrieve_partner_vals(self, tree, role):
@@ -252,6 +241,7 @@ class AccountEdiXmlCIUSRO(models.AbstractModel):
 
     def _import_invoice_ubl_cii(self, invoice, file_data, new=False):
         res = super()._import_invoice_ubl_cii(invoice, file_data, new=new)
+        invoice.date = invoice.invoice_date
         if invoice.company_id.l10n_ro_render_anaf_pdf:
             self.l10n_ro_renderAnafPdf(invoice)
         return res
@@ -357,7 +347,7 @@ class AccountEdiXmlCIUSRO(models.AbstractModel):
         return val_list
 
     def split_string(self, string):
-        return [string[i : i + 100] for i in range(0, len(string), 100)]
+        return [string[i : i + 300] for i in range(0, len(string), 300)]
 
     def _export_invoice_constraints(self, invoice, vals):
         # EXTENDS 'account_edi_ubl_cii'
