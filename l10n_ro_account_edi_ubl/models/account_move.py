@@ -287,7 +287,7 @@ class AccountMove(models.Model):
         company_ids = (
             self.env["res.company"]
             .sudo()
-            .search([("l10n_ro_edi_residence", "!=", False)])
+            .search([("l10n_ro_edi_residence", "!=", False)]).filtered(lambda l: l.country_id.code == 'RO')
         )
         for company in company_ids:
             days = company.l10n_ro_edi_residence
@@ -302,7 +302,7 @@ class AccountMove(models.Model):
                     ("company_id", "=", company.id),
                 ]
             )
-            invoices = invoices.filtered(lambda inv: inv._need_ubl_cii_xml("ciusro"))
+            invoices = invoices.filtered(lambda inv: inv._need_ubl_cii_xml("ciusro")).filtered(lambda l: l.partner_id.country_code == "RO")
             if not invoices:
                 continue
             composer = (
@@ -312,6 +312,7 @@ class AccountMove(models.Model):
                     {
                         "mail_template_id": template.id,
                         "sending_methods": False,
+                        "extra_edis": "ro_edi",
                     }
                 )
             )
