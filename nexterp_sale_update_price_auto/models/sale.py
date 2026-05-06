@@ -18,8 +18,8 @@ class SaleOrder(models.Model):
             and self.company_id.sale_auto_update_price
         ):
             self._recompute_prices()
-            if not isinstance(self.id, models.NewId):
-                self.message_post(
+            if self._origin.id:
+                self._origin.message_post(
                     body=self.env._(
                         "Product prices have been recomputed according to pricelist "
                         "<b>%s</b>",
