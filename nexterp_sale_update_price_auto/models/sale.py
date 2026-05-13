@@ -17,7 +17,7 @@ class SaleOrder(models.Model):
             and self._origin.pricelist_id != self.pricelist_id
             and self.company_id.sale_auto_update_price
         ):
-            self._recompute_prices()
+            self.with_context(force_price_recomputation=True)._recompute_prices()
             if self._origin.id:
                 self._origin.message_post(
                     body=self.env._(

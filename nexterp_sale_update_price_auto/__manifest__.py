@@ -5,7 +5,7 @@
 {
     "name": "NextERP - Sale Update Prices Auto",
     "summary": "NextERP - Sale Update Prices Auto",
-    "version": "19.0.1.0.0",
+    "version": "19.0.1.0.1",
     "depends": ["sale_management"],
     "author": "NextERP Romania",
     "website": "https://github.com/NextERP-Romania/odoo-community",
