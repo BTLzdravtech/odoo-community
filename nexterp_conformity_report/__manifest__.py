@@ -5,7 +5,7 @@
     "summary": "NextERP - Conformity Certificate",
     "version": "19.0.1.0.0",
     "author": "NextERP Romania",
-    "website": "https://github.com/NextERP-Romania/odoo-community",
+    "website": "https://www.nexterp.ro",
     "category": "Special",
     "depends": ["sale_stock", "l10n_ro_stock_picking_comment_template"],
     "data": ["report/certificat_conformitate.xml"],

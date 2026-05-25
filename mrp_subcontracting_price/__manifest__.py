@@ -7,7 +7,7 @@
         based on purchase price and the components value
     """,
     "author": "NextERP Romania",
-    "website": "https://github.com/NextERP-Romania/odoo-community",
+    "website": "https://www.nexterp.ro",
     "license": "OPL-1",
     "images": ["static/description/apps_icon.png"],
     "depends": [
