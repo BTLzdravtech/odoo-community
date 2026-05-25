@@ -9,6 +9,7 @@
     "author": "NextERP Romania",
     "website": "https://github.com/NextERP-Romania/odoo-community",
     "license": "OPL-1",
+    "images": ["static/description/apps_icon.png"],
     "depends": [
         "l10n_ro_stock_account",
         "mrp_subcontracting_purchase",

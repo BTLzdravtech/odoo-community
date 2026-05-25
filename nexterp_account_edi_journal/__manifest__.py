@@ -10,6 +10,7 @@
     "website": "https://github.com/NextERP-Romania/odoo-community",
     "support": "odoo_apps@nexterp.ro",
     "license": "LGPL-3",
+    "images": ["static/description/apps_icon.png"],
     "currency": "EUR",
     "data": [
         "views/account_journal_views.xml",

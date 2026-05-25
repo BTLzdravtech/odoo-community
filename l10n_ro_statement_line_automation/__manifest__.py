@@ -12,6 +12,7 @@
     "countries": ["ro"],
     "depends": ["account", "l10n_ro"],
     "license": "AGPL-3",
+    "images": ["static/description/apps_icon.png"],
     "data": [],
     "development_status": "Mature",
     "maintainers": [],

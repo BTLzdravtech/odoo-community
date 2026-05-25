@@ -12,4 +12,5 @@
     "auto_install": False,
     "installable": True,
     "license": "AGPL-3",
+    "images": ["static/description/apps_icon.png"],
 }
