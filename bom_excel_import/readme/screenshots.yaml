@@ -1,13 +1,13 @@
 scenarios:
-- name: wizard_action_bom_excel_import_wizard
-  description: 'Wizard: BOM Excel Import (auto-discovered)'
-  steps:
-  - goto: /odoo/action-bom_excel_import.action_bom_excel_import_wizard
-  - wait: .modal-dialog
-  - sleep: 400
-  - screenshot:
-      selector: .modal-dialog
-      filename: wizard_action_bom_excel_import_wizard.png
+  - name: wizard_action_bom_excel_import_wizard
+    description: "Wizard: BOM Excel Import (auto-discovered)"
+    steps:
+      - goto: /odoo/action-bom_excel_import.action_bom_excel_import_wizard
+      - wait: .modal-dialog
+      - sleep: 400
+      - screenshot:
+          selector: .modal-dialog
+          filename: wizard_action_bom_excel_import_wizard.png
 setup:
   viewport:
     width: 1440
