@@ -11,6 +11,7 @@
     "website": "https://github.com/NextERP-Romania/odoo-community",
     "support": "odoo_apps@nexterp.ro",
     "license": "OPL-1",
+    "images": ["static/description/apps_icon.png"],
     "currency": "EUR",
     "data": [
         "views/report_picking.xml",
