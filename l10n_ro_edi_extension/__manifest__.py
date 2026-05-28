@@ -15,6 +15,7 @@
         "wizard/res_config_settings_views.xml",
     ],
     "license": "LGPL-3",
+    "images": ["static/description/apps_icon.png"],
     "installable": True,
     "auto_install": True,
 }
