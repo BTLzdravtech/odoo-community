@@ -8,9 +8,10 @@
     "version": "19.0.0.0.0",
     "category": "Generic Modules/Purchase",
     "author": "NextERP Romania",
-    "website": "https://github.com/NextERP-Romania/odoo-community",
+    "website": "https://www.nexterp.ro",
     "depends": ["purchase_exception"],
     "license": "AGPL-3",
+    "images": ["static/description/apps_icon.png"],
     "data": [
         "views/purchase_view.xml",
     ],
