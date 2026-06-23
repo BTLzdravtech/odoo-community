@@ -1,6 +1,40 @@
-====================================
 Romania - eTransport Batch Extension
-====================================
+
+This module brings the facilities of ``l10n_ro_edi_stock_extension`` to
+**batch transfers** (``stock.picking.batch``), so that an eTransport
+notification sent from a batch behaves exactly like one sent from a single
+transfer.
+
+On top of the base ``l10n_ro_edi_stock_batch`` it adds, for batches:
+
+* Stricter validation per ANAF Schematron v2.0.2 (operation scope vs operation
+  type, partner country code, mandatory tariff code / weights / value, previous
+  notifications for operations 60/70).
+* Correct ``valoareLeiFaraTva`` through a configurable **price source**
+  (automatic / cost / purchase / sale / list).
+* Correct net and gross weights, quantity and unit of measure, and ``codTarifar``
+  (NC8) per move.
+* Street / number split on the location addresses.
+* Multiple ``documenteTransport`` entries and ``notificareAnterioara`` entries.
+* Post-outage declaration flag (``declPostAvarie``).
+* The **Delete / Confirm / Modify vehicle** ANAF actions on the batch form.
+* Reconciliation of batch UITs in the ANAF LIST cron job.
+
+Technically the batch reuses the picking-level logic of
+``l10n_ro_edi_stock_extension``: the batch is injected as the
+``_picking_record`` used by the extension's validation and template
+enrichment, and implements the same helper interface.
+
+Detailed documentation
+
+The full eTransport flow — how to configure and operate it across all
+situations, plus the batch-specific behaviour — is documented in the
+``l10n_ro_edi_stock_extension`` module:
+
+* ``docs/ghid_utilizare_etransport.rst`` — practical guide (configuration +
+  all situations, including batch transfers).
+* ``docs/flux_etransport.rst`` — technical flow description.
+Romania - eTransport Batch Extension
 
 ..
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -12,7 +46,6 @@ Romania - eTransport Batch Extension
 
 
 Romania - eTransport Batch Extension
-====================================
 
 Extends eTransport (e-Transport) EDI notifications to **batch
 transfers** (``stock.picking.batch``), bringing the full feature set of
@@ -70,10 +103,8 @@ duplicate logic is needed.
    :local:
 
 Use Cases / Context
-===================
 
 Key features
-============
 
 -  **Full eTransport parity for batch transfers** — batch notifications
    go through the same ANAF Schematron v2.0.2 validation as individual
@@ -94,10 +125,8 @@ Key features
    cron job automatically.
 
 Configuration
-=============
 
 Configuration
-=============
 
 This module requires no dedicated configuration steps beyond installing
 its two dependencies (``l10n_ro_edi_stock_batch`` and
@@ -160,10 +189,8 @@ individual transfer UITs. No extra configuration is needed — batches are
 included in ``_l10n_ro_edi_stock_list_sync_one`` automatically.
 
 Changelog
-=========
 
 Changelog
-=========
 
 19.0.1.0.0 (2026-06-23)
 -----------------------
@@ -171,7 +198,6 @@ Changelog
 -  *Changelog tracking starts at this release.*
 
 Bug Tracker
-===========
 
 Bugs are tracked on `NextERP Issues <https://www.nexterp.ro/helpdesk>`_.
 In case of trouble, please check there if your issue has already been reported.
