@@ -40,10 +40,16 @@ class L10nRoEdiStockTransporterInfoWizard(models.TransientModel):
             raise UserError(self.env._("ANAF error: %(err)s", err=result["error"]))
 
         self.line_ids = [(5, 0, 0)]
+        # ANAF returns the records under "mesaje" (legacy "inregistrari" kept as
+        # a fallback). Using the wrong key silently yields an empty list.
         rows = (
             result["content"]
             if isinstance(result["content"], list)
-            else result["content"].get("inregistrari", [])
+            else (
+                result["content"].get("mesaje")
+                or result["content"].get("inregistrari")
+                or []
+            )
         )
         line_vals = []
         for row in rows:

@@ -1,4 +1,8 @@
 # Copyright 2026 NextERP Romania SRL
+import base64
+
+import markupsafe
+
 from odoo import api, fields, models
 from odoo.tools.float_utils import float_is_zero
 
@@ -74,25 +78,68 @@ class StockPickingBatch(models.Model):
         # _l10n_ro_edi_stock_get_template_data) treats it as the
         # ``_picking_record`` and applies all extension enrichments.
         self.ensure_one()
+        # ``l10n_ro_edi_stock_xml_capture`` is a mutable side-channel: the
+        # extension's _l10n_ro_edi_stock_get_template_data stores the final
+        # template data into it so the amend correction XML can be re-rendered
+        # below (see _l10n_ro_edi_stock_create_document_stock_sent).
         return super(
             StockPickingBatch,
             self.with_context(
                 l10n_ro_edi_stock_batch_id=self.id,
                 l10n_ro_edi_stock_event_send_type=send_type,
+                l10n_ro_edi_stock_xml_capture={},
             ),
         )._l10n_ro_edi_stock_send_etransport_document(send_type=send_type)
 
     def _l10n_ro_edi_stock_create_document_stock_sent(self, values):
-        # EXTENDS l10n_ro_edi_stock_batch: tag the document with the ANAF event
-        # type (NOT for an initial send, COR for a correction) so the eTransport
-        # Documents list can tell notifications and corrections apart.
-        document = super()._l10n_ro_edi_stock_create_document_stock_sent(values)
+        # EXTENDS l10n_ro_edi_stock_batch:
+        # 1) On amend, the base re-stores the original validated XML instead of
+        #    the correction actually sent to ANAF (which contains <corectie>).
+        #    Re-render the real correction from the captured template data so the
+        #    stored document/attachment reflects what was transmitted.
+        # 2) Tag the document with the ANAF event type (NOT / COR) so the
+        #    eTransport Documents list can tell notifications and corrections apart.
         send_type = self.env.context.get("l10n_ro_edi_stock_event_send_type")
+        capture = self.env.context.get("l10n_ro_edi_stock_xml_capture")
+        if send_type == "amend" and capture and capture.get("data"):
+            values = dict(values)
+            values["raw_xml"] = markupsafe.Markup(
+                "<?xml version='1.0' encoding='UTF-8'?>\n"
+            ) + self.env["ir.qweb"]._render(
+                "l10n_ro_edi_stock.l10n_ro_template_etransport",
+                values={"data": capture["data"]},
+            )
+        document = super()._l10n_ro_edi_stock_create_document_stock_sent(values)
         if send_type and not document.l10n_ro_edi_stock_event_type:
             document.l10n_ro_edi_stock_event_type = (
                 "COR" if send_type == "amend" else "NOT"
             )
         return document
+
+    def _l10n_ro_edi_stock_report_unhandled_document_state(self, state):
+        # EXTENDS l10n_ro_edi_stock_batch: persist a 'stock_sending_failed'
+        # document for an unrecognised ANAF status (the base only logs it while
+        # the fetch routine deletes the 'stock_sent' document), so the batch does
+        # not silently lose its eTransport state.
+        self.ensure_one()
+        current = self.l10n_ro_edi_stock_document_ids.filtered(
+            lambda d: d.state == "stock_sent"
+        ).sorted()[:1]
+        if current:
+            failed_values = {
+                "message": self.env._(
+                    "Unhandled eTransport status returned by ANAF: %(state)s",
+                    state=state,
+                ),
+                "l10n_ro_edi_stock_load_id": current.l10n_ro_edi_stock_load_id,
+                "l10n_ro_edi_stock_uit": current.l10n_ro_edi_stock_uit,
+            }
+            if current.attachment:
+                failed_values["raw_xml"] = base64.b64decode(
+                    current.attachment
+                ).decode()
+            self._l10n_ro_edi_stock_create_document_stock_sending_failed(failed_values)
+        return super()._l10n_ro_edi_stock_report_unhandled_document_state(state)
 
     ################################################################################
     # Duck-typing: the extension's template/validation code calls these helpers on

@@ -60,10 +60,16 @@ class ResCompany(models.Model):
         if "error" in result:
             _logger.warning("LIST ANAF (%s): %s", company.name, result["error"])
             return
+        # ANAF returns the records under "mesaje" (legacy "inregistrari" kept as
+        # a fallback). Using the wrong key silently yields an empty list.
         rows = (
             result["content"]
             if isinstance(result["content"], list)
-            else result["content"].get("inregistrari", [])
+            else (
+                result["content"].get("mesaje")
+                or result["content"].get("inregistrari")
+                or []
+            )
         )
         if not rows:
             return

@@ -1,4 +1,5 @@
 # Copyright 2026 NextERP Romania SRL
+import base64
 import logging
 import re
 
@@ -313,6 +314,30 @@ class StockPicking(models.Model):
             )
         return document
 
+    def _l10n_ro_edi_stock_report_unhandled_document_state(self, state):
+        # EXTENDS l10n_ro_edi_stock: the base only logs a chatter message for an
+        # unrecognised ANAF status while the current 'stock_sent' document is
+        # deleted by the fetch routine, so the transfer silently loses its
+        # eTransport state. Persist a 'stock_sending_failed' document instead so
+        # the status stays visible and the transfer can be retried/amended.
+        self.ensure_one()
+        current = self.l10n_ro_edi_stock_document_ids.filtered(
+            lambda d: d.state == "stock_sent"
+        ).sorted()[:1]
+        if current:
+            values = {
+                "message": self.env._(
+                    "Unhandled eTransport status returned by ANAF: %(state)s",
+                    state=state,
+                ),
+                "l10n_ro_edi_stock_load_id": current.l10n_ro_edi_stock_load_id,
+                "l10n_ro_edi_stock_uit": current.l10n_ro_edi_stock_uit,
+            }
+            if current.attachment:
+                values["raw_xml"] = base64.b64decode(current.attachment).decode()
+            self._l10n_ro_edi_stock_create_document_stock_sending_failed(values)
+        return super()._l10n_ro_edi_stock_report_unhandled_document_state(state)
+
     @api.model
     def _l10n_ro_edi_stock_get_template_data(self, data: dict):
         picking_id = self.env.context.get("l10n_ro_edi_stock_extension_picking")
@@ -418,6 +443,14 @@ class StockPicking(models.Model):
         # ------- refDeclarant truncated to 50 chars (Str50 XSD) -------
         if template.get("refDeclarant"):
             template["refDeclarant"] = template["refDeclarant"][:50]
+
+        # Expose the final template data so the batch flow can re-render the
+        # actually-sent XML (the base batch amend re-stores the original
+        # validated XML instead of the correction). See the batch extension's
+        # _l10n_ro_edi_stock_create_document_stock_sent override.
+        capture = self.env.context.get("l10n_ro_edi_stock_xml_capture")
+        if capture is not None:
+            capture["data"] = template
 
         return {"data": template}
 
