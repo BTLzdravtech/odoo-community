@@ -126,7 +126,7 @@
                     string="Error"
                     domain="[('state', '=', 'stock_sending_failed')]"
                 />
-                <group expand="0" string="Group By">
+                <group name="group_by">
                     <filter
                         name="group_event"
                         string="Event Type"
