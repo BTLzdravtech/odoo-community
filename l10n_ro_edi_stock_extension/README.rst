@@ -1,55 +1,6 @@
 ==============================
-
-Modul de corecții și extensii pentru ``l10n_ro_edi_stock`` (oficial Odoo)
-ca să fie aliniat cu specificația ANAF eTransport v2 (XSD 2023-01-26,
-Schematron v2.0.2 din 2024-08-12).
-
-Corecții față de modulul oficial
-
-* ``valoareLeiFaraTva`` se calculează diferit în funcție de operațiune:
-
-  * incoming (10, 12, 14, 30 transfer, 40, 60): preț de cost din mișcare
-    sau, dacă există PO, ``purchase.order.line.price_unit`` convertit în RON
-  * outgoing (20, 22, 24, 30 vânzare, 50, 70): preț de vânzare din
-    ``sale.order.line.price_unit`` convertit în RON sau ``list_price``
-
-* Cantitatea este convertită corect între ``move.product_uom`` și UoM-ul
-  declarat în ``codUnitateMasura``.
-
-* Greutatea brută nu mai dublează ``shipping_weight`` când un colet are
-  mai multe ``move_lines``; se garantează ``greutateBruta >= greutateNeta``.
-
-* ``codTarifar`` devine obligatoriu (fără fallback ``00000000``).
-
-* ``denumireStrada`` se separă de ``numar/bloc/scara/etaj/apartament``
-  conform LocatieType din XSD.
-
-Funcționalitate nouă
-
-* ``tipDocument`` selectabil (10 CMR / 20 Factură / 30 Aviz / 9999 Altele)
-  cu multiple documente per notificare.
-
-* ``notificareAnterioara`` pentru operațiunile 60/70 (DIN/DIE).
-
-* ``declPostAvarie`` (declarație post-avarie sistem).
-
-* Acțiuni complete pe UIT: ștergere, confirmare (10/20/30),
-  modificare vehicul (MVH).
-
-* Serviciu LISTA - sincronizare automată notificări (cron 6h).
-
-* Serviciu INFO TRANSPORTATORI - vizualizare notificări pentru
-  organizator transport.
-
-Documentație detaliată
-
-* ``docs/ghid_utilizare_etransport.rst`` – ghid practic: cum se configurează
-  și cum se lucrează, cu toate situațiile (per tip de operațiune, transferuri
-  în lot, corecții, acțiuni pe UIT, erori frecvente).
-* ``docs/flux_etransport.rst`` – descriere tehnică pas cu pas a fluxului
-  (stări, acțiuni, validări, calculul valorii, greutăți, locații, fluxul pe
-  loturi și serviciile ANAF auxiliare).
 Romania - eTransport Extension
+==============================
 
 ..
    !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -61,6 +12,7 @@ Romania - eTransport Extension
 
 
 Romania - eTransport Extension
+==============================
 
 Fixes and extensions for the official Odoo ``l10n_ro_edi_stock`` module
 to align it with the ANAF eTransport v2 specification (XSD 2023-01-26,
@@ -137,8 +89,10 @@ What this module provides
    :local:
 
 Use Cases / Context
+===================
 
 Key features
+============
 
 -  **Compliant with ANAF eTransport v2.0.2** — corrects value, weight,
    UoM, address and HS-code bugs in the official ``l10n_ro_edi_stock``
@@ -163,8 +117,10 @@ Key features
    details.
 
 Configuration
+=============
 
 Configuration
+=============
 
 1. Company-wide default price source
 ------------------------------------
@@ -306,8 +262,10 @@ Querying transporter info (as transport operator)
    UIT, vehicle numbers, start/end locations, and expiry date.
 
 Changelog
+=========
 
 Changelog
+=========
 
 19.0.1.0.0 (2026-06-23)
 -----------------------
@@ -315,6 +273,7 @@ Changelog
 -  *Changelog tracking starts at this release.*
 
 Bug Tracker
+===========
 
 Bugs are tracked on `NextERP Issues <https://www.nexterp.ro/helpdesk>`_.
 In case of trouble, please check there if your issue has already been reported.
