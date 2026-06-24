@@ -49,9 +49,9 @@
 
     <menuitem
         id="menu_l10n_ro_edi_stock_transporter_info_wizard"
-        name="Notifications as transport operator"
+        name="Transporters"
         action="action_l10n_ro_edi_stock_transporter_info_wizard"
-        parent="stock.menu_stock_inventory_control"
-        sequence="201"
+        parent="menu_l10n_ro_edi_stock_etransport_root"
+        sequence="30"
     />
 </odoo>

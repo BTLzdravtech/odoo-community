@@ -290,13 +290,28 @@ class StockPicking(models.Model):
         # Override: pass self via context so the override of
         # _l10n_ro_edi_stock_get_template_data can access the picking record
         # (price source, doc lines, previous notifications, post-outage flag).
+        # Also stash send_type so the created document can be tagged with the
+        # ANAF event type (NOT for an initial send, COR for a correction).
         self.ensure_one()
         return super(
             StockPicking,
             self.with_context(
                 l10n_ro_edi_stock_extension_picking=self.id,
+                l10n_ro_edi_stock_event_send_type=send_type,
             ),
         )._l10n_ro_edi_stock_send_etransport_document(send_type=send_type)
+
+    def _l10n_ro_edi_stock_create_document_stock_sent(self, values):
+        # EXTENDS l10n_ro_edi_stock: tag the document with the ANAF event type
+        # so NOT (notification) and COR (correction) are distinguishable in the
+        # eTransport Documents list (DEL/CON/MVH are tagged by the action wizard).
+        document = super()._l10n_ro_edi_stock_create_document_stock_sent(values)
+        send_type = self.env.context.get("l10n_ro_edi_stock_event_send_type")
+        if send_type and not document.l10n_ro_edi_stock_event_type:
+            document.l10n_ro_edi_stock_event_type = (
+                "COR" if send_type == "amend" else "NOT"
+            )
+        return document
 
     @api.model
     def _l10n_ro_edi_stock_get_template_data(self, data: dict):

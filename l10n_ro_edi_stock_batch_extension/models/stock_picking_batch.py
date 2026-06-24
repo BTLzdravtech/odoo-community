@@ -76,8 +76,23 @@ class StockPickingBatch(models.Model):
         self.ensure_one()
         return super(
             StockPickingBatch,
-            self.with_context(l10n_ro_edi_stock_batch_id=self.id),
+            self.with_context(
+                l10n_ro_edi_stock_batch_id=self.id,
+                l10n_ro_edi_stock_event_send_type=send_type,
+            ),
         )._l10n_ro_edi_stock_send_etransport_document(send_type=send_type)
+
+    def _l10n_ro_edi_stock_create_document_stock_sent(self, values):
+        # EXTENDS l10n_ro_edi_stock_batch: tag the document with the ANAF event
+        # type (NOT for an initial send, COR for a correction) so the eTransport
+        # Documents list can tell notifications and corrections apart.
+        document = super()._l10n_ro_edi_stock_create_document_stock_sent(values)
+        send_type = self.env.context.get("l10n_ro_edi_stock_event_send_type")
+        if send_type and not document.l10n_ro_edi_stock_event_type:
+            document.l10n_ro_edi_stock_event_type = (
+                "COR" if send_type == "amend" else "NOT"
+            )
+        return document
 
     ################################################################################
     # Duck-typing: the extension's template/validation code calls these helpers on

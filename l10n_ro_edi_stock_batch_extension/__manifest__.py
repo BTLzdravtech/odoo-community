@@ -16,6 +16,7 @@
     "data": [
         "wizards/l10n_ro_edi_stock_action_wizard_views.xml",
         "views/stock_picking_batch_views.xml",
+        "views/l10n_ro_edi_stock_document_views.xml",
     ],
     "auto_install": True,
     "installable": True,

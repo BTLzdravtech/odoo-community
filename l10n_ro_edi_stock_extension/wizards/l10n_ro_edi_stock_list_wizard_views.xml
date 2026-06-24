@@ -47,9 +47,9 @@
 
     <menuitem
         id="menu_l10n_ro_edi_stock_list_wizard"
-        name="eTransport notifications list"
+        name="Notifications list"
         action="action_l10n_ro_edi_stock_list_wizard"
-        parent="stock.menu_stock_inventory_control"
-        sequence="200"
+        parent="menu_l10n_ro_edi_stock_etransport_root"
+        sequence="20"
     />
 </odoo>
