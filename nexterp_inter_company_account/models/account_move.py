@@ -30,11 +30,14 @@ class AccountMove(models.Model):
                 partners = company_partners.filtered(
                     lambda p, company=company: p.id != company.partner_id.id
                 )
+                if not partners:
+                    continue
                 # pylint: disable=E8103
                 self.env.cr.execute(
-                    f"""
+                    """
                     UPDATE account_move am
                     SET is_inter_company = True
-                    WHERE am.partner_id = ANY(ARRAY{partners.ids});"""
+                    WHERE am.partner_id = ANY(%s);""",
+                    (partners.ids,),
                 )  # noqa
         return super()._auto_init()
