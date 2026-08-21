@@ -26,4 +26,5 @@
     "development_status": "Mature",
     "maintainers": ["feketemihai"],
     "license": "AGPL-3",
+    "images": ["static/description/apps_icon.png"],
 }
