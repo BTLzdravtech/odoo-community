@@ -379,6 +379,9 @@ class AccountEdiXmlCIUSRO(models.AbstractModel):
             for vals in val_list:
                 if vals.get("commercial_partner") == partner:
                     vals["company_id"] = "0000000000000"
+        if partner.nrc:
+            for vals in val_list:
+                vals["company_id"] = partner.nrc
         return val_list
 
     def split_string(self, string):
