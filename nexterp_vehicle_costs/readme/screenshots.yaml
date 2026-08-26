@@ -1,0 +1,14 @@
+scenarios:
+  - name: action_fleet_log_reporting_action
+    description: "Action: Costs Analysis Log (auto-discovered)"
+    steps:
+      - goto: /odoo/action-nexterp_vehicle_costs.fleet_log_reporting_action
+      - wait: .o_form_view, .o_list_view, .o_kanban_view, .o_pivot_view, .o_graph_view
+      - sleep: 600
+      - screenshot:
+          filename: action_fleet_log_reporting_action.png
+setup:
+  viewport:
+    width: 1440
+    height: 900
+  pause_ms_default: 500
