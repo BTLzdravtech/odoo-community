@@ -4,9 +4,29 @@ on:
   pull_request:
     branches:
       - "19.0*"
+    paths-ignore:
+      # Documentation-only commits (the nightly doc-refresh bot) must not
+      # spin up a full CI run: nothing they touch can change behaviour.
+      - "**/static/description/**"
+      - "**/README.rst"
+      - "**/i18n/*.po"
+      - "**/i18n/*.pot"
   push:
     branches:
       - "19.0"
+    paths-ignore:
+      # Documentation-only commits (the nightly doc-refresh bot) must not
+      # spin up a full CI run: nothing they touch can change behaviour.
+      - "**/static/description/**"
+      - "**/README.rst"
+      - "**/i18n/*.po"
+      - "**/i18n/*.pot"
+
+# A new push on top of a PR cancels the in-flight run; pushes to the
+# protected branch are left alone so the branch always has a final result.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   pre-commit:
