@@ -241,7 +241,7 @@ After a notification UIT has been obtained:
 Syncing the ANAF notifications list manually
 --------------------------------------------
 
-1. Go to **Inventory → Operations → eTransport notifications list**
+1. Go to **Inventory → eTransport → Notifications list**
    (``menu_l10n_ro_edi_stock_list_wizard``).
 2. Enter the **Number of days** (1–60) to look back.
 3. Click **Fetch** (``action_fetch``). The wizard retrieves the ANAF
@@ -253,8 +253,8 @@ Syncing the ANAF notifications list manually
 Querying transporter info (as transport operator)
 -------------------------------------------------
 
-1. Go to **Inventory → Operations → Notifications as transport
-   operator** (``menu_l10n_ro_edi_stock_transporter_info_wizard``).
+1. Go to **Inventory → eTransport → Transporters**
+   (``menu_l10n_ro_edi_stock_transporter_info_wizard``).
 2. Fill in **Transport operator VAT**, and optionally **Initial
    declarant VAT**, **Specific UIT**, or **Declarant reference**.
 3. Click **Fetch** (``action_fetch``). Each matching ANAF notification
@@ -266,6 +266,20 @@ Changelog
 
 Changelog
 =========
+
+19.0.1.2.0 (2026-09-15)
+-----------------------
+
+-  Drop the base ``Warehouse of ... should be in Romania`` error on the
+   counterparty side of intra-EU / import / export operations, which
+   ``l10n_ro_edi_stock`` started raising unconditionally and which made
+   those notifications impossible to send.
+-  Fix ``AttributeError`` when the ANAF response has an unexpected
+   shape: ``ETransportAPI`` is a plain class, so the module-level ``_``
+   has to be used instead of ``self.env._``.
+-  ``_compute_l10n_ro_edi_stock_enable_send`` now only widens the states
+   the base does not already cover ('assigned' has been allowed upstream
+   since 19.0).
 
 19.0.1.0.0 (2026-06-23)
 -----------------------
