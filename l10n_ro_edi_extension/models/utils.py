@@ -16,6 +16,19 @@ NS_DOWNLOAD = {
 NS_SIGNATURE = {"ns": "http://www.w3.org/2000/09/xmldsig#"}
 
 
+# The SPV answer is parsed before anything about it has been checked, so the
+# parser is given no way to reach outside the document: no entity resolution,
+# no DTD loading, no network. A malformed or hostile file can then only fail
+# to parse.
+def _xml_parser():
+    return etree.XMLParser(resolve_entities=False, no_network=True, load_dtd=False)
+
+
+# An e-Factura invoice is a few hundred kilobytes. Anything that unpacks to
+# more than this is not one, and is not worth holding in memory to find out.
+MAX_UNCOMPRESSED_SIZE = 64 * 1024 * 1024
+
+
 def _safe_xml_fromstring(file_bytes):
     """Parse XML bytes received from the SPV, working around invoices that
     incorrectly declare ``xmlns:schemaLocation`` instead of
@@ -24,7 +37,7 @@ def _safe_xml_fromstring(file_bytes):
     invalid URI, so the whole download fails to parse even though the
     document is otherwise well-formed."""
     try:
-        return etree.fromstring(file_bytes)
+        return etree.fromstring(file_bytes, parser=_xml_parser())
     except etree.XMLSyntaxError:
         if b"xmlns:schemaLocation=" not in file_bytes:
             raise
@@ -38,7 +51,7 @@ def _safe_xml_fromstring(file_bytes):
                 b"xsi:schemaLocation=",
                 1,
             )
-        return etree.fromstring(fixed_bytes)
+        return etree.fromstring(fixed_bytes, parser=_xml_parser())
 
 
 def make_efactura_request(
@@ -123,6 +136,63 @@ def make_efactura_request(
     return {"content": response.content}
 
 
+def _ciusro_upload_standard(xml_data):
+    """The ``standard`` upload parameter follows the document actually sent:
+    ``UBL`` for an ``<Invoice>``, ``CN`` for a ``<CreditNote>``.
+
+    Native l10n_ro_edi derives it from the move type and sends every refund
+    as ``CN``; a credit note exported as a storno invoice (380 with negative
+    values) is an ``<Invoice>``, which ANAF then refuses with "Cannot find
+    the declaration of element 'Invoice'"."""
+    try:
+        root = etree.fromstring(
+            xml_data if isinstance(xml_data, bytes) else xml_data.encode(),
+            parser=_xml_parser(),
+        )
+    except etree.XMLSyntaxError:
+        return "UBL"
+    return "CN" if etree.QName(root).localname == "CreditNote" else "UBL"
+
+
+def _ciusro_upload_errors(content):
+    """``errorMessage`` of every element of an upload reply. The reply is in
+    the ``respUploadFisier:v1`` namespace; native looked for
+    ``stareMesajFactura:v1`` and returned an empty error."""
+    root = etree.fromstring(content, parser=_xml_parser())
+    if root.get("ExecutionStatus") != "1":
+        return None
+    messages = [el.get("errorMessage") for el in root.iter()]
+    return [m for m in messages if m] or [content.decode(errors="replace")]
+
+
+def _request_ciusro_upload(company, xml_data, is_b2b=True, extra_params=None):
+    """Upload an e-Factura to the SPV.
+
+    :return: ``{'error': str}`` | ``{'key_loading': str | False}``
+    """
+    params = {
+        "standard": _ciusro_upload_standard(xml_data),
+        "cif": company.vat.replace("RO", ""),
+        **(extra_params or {}),
+    }
+    result = make_efactura_request(
+        session=requests,
+        company=company,
+        endpoint="upload" if is_b2b else "uploadb2c",
+        params=params,
+        data=xml_data,
+    )
+    if "error" in result:
+        # A timeout means the SPV received it but returned no index yet.
+        if "timeout" in result:
+            return {"key_loading": False}
+        return result
+    if errors := _ciusro_upload_errors(result["content"]):
+        return {"error": "\n".join(errors)}
+    root = etree.fromstring(result["content"], parser=_xml_parser())
+    return {"key_loading": root.get("index_incarcare")}
+
+
 def _request_ciusro_download_answer(company, key_download, session):
     """Make a "Download Answer" (GET/descarcare) request to the Romanian SPV.
 
@@ -173,6 +243,14 @@ def _request_ciusro_download_answer(company, key_download, session):
         extracted_data = {"signature": {}, "invoice": {}}
         with zipfile.ZipFile(io.BytesIO(result["content"])) as zip_ref:
             for file in zip_ref.infolist():
+                if file.file_size > MAX_UNCOMPRESSED_SIZE:
+                    return {
+                        "error": company.env._(
+                            "The answer from the SPV contains a file of "
+                            "%(size)s bytes, which is not an invoice.",
+                            size=file.file_size,
+                        )
+                    }
                 file_bytes = zip_ref.read(file)
                 root = _safe_xml_fromstring(file_bytes)
 
