@@ -15,6 +15,9 @@ from odoo.addons.l10n_ro_edi_stock_extension.models.l10n_ro_edi_stock_document i
     EXTRA_DOCUMENT_STATES,
     RECORD_STATE_ONDELETE,
 )
+from odoo.addons.l10n_ro_edi_stock_extension.models.stock_picking import (
+    EtransportCheckResult,
+)
 
 # Context key set by the stock flows that legitimately take a transfer out of
 # a batch (validation with backorders, cancellation of a transfer).
@@ -70,6 +73,29 @@ class StockPickingBatch(models.Model):
         "of the next working day after the ANAF system is restored.",
     )
 
+    # Transport company declared to ANAF for the whole batch (see the field
+    # of the same name on stock.picking): filled from the delivery method of
+    # the transfers, editable when the carrier is only known later.
+    l10n_ro_edi_stock_transport_partner_id = fields.Many2one(
+        comodel_name="res.partner",
+        string="eTransport Carrier",
+        compute="_compute_l10n_ro_edi_stock_transport_partner_id",
+        store=True,
+        readonly=False,
+        copy=False,
+        help="Transport company declared in the eTransport notification. "
+        "Filled from the delivery method of the transfers; can be changed "
+        "until the notification is sent. Another carrier afterwards means "
+        "deleting the notification and sending a new one.",
+    )
+
+    @api.depends("picking_ids.carrier_id.l10n_ro_edi_stock_partner_id")
+    def _compute_l10n_ro_edi_stock_transport_partner_id(self):
+        for batch in self:
+            partner = batch.picking_ids[:1].carrier_id.l10n_ro_edi_stock_partner_id
+            if partner:
+                batch.l10n_ro_edi_stock_transport_partner_id = partner
+
     ################################################################################
     # Integrity: a batch with a live UIT stays until ANAF is told otherwise
     ################################################################################
@@ -102,6 +128,35 @@ class StockPickingBatch(models.Model):
     @api.ondelete(at_uninstall=False)
     def _unlink_except_l10n_ro_edi_stock_live_uit(self):
         self._l10n_ro_edi_stock_check_no_live_uit(self.env._("deleted"))
+
+    def action_l10n_ro_edi_stock_check(self):
+        """Run every check of a send without sending (same as on a transfer)."""
+        self.ensure_one()
+        try:
+            self.with_context(
+                l10n_ro_edi_stock_dry_run=True
+            )._l10n_ro_edi_stock_send_etransport_document("send")
+            errors = []
+        except EtransportCheckResult as result:
+            errors = result.errors
+        except UserError as error:
+            errors = [str(error.args[0])]
+        if errors:
+            raise UserError(
+                self.env._(
+                    "%(name)s cannot be sent to eTransport yet:\n\n%(errors)s",
+                    name=self.display_name,
+                    errors="\n".join(f"- {e}" for e in errors),
+                )
+            )
+        return {
+            "type": "ir.actions.client",
+            "tag": "display_notification",
+            "params": {
+                "type": "success",
+                "message": self.env._("eTransport data is complete, it can be sent."),
+            },
+        }
 
     def action_cancel(self):
         self._l10n_ro_edi_stock_check_no_live_uit(self.env._("cancelled"))

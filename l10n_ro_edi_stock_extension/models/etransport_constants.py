@@ -6,6 +6,19 @@ OUTGOING_OPERATIONS = ("20", "22", "24", "50", "70")
 NATIONAL_OPERATIONS = ("30",)
 NO_GOODS_DATA_OPERATIONS = ("60", "70")
 
+# ANAF: "Data declarată a transportului trebuie să fie în intervalul
+# <azi> - <azi + 3>".
+TRANSPORT_DATE_MAX_DAYS = 3
+
+# Days the UIT is valid, counted from dataTransport inclusive (OUG 41/2022
+# art. 11 par. 2): 15 for goods entering Romania from another EU state -
+# intra-community acquisition (10), non-transfer / lohn (12), stocks at the
+# customer's disposal (14), intra-community transit with storage (60);
+# 5 for everything else (seen at ANAF: op 20 declared on 18.11 -> valid
+# 18 - 22.11).
+UIT_VALIDITY_DAYS = dict.fromkeys(("10", "12", "14", "60"), 15)
+UIT_VALIDITY_DAYS_DEFAULT = 5
+
 DOCUMENT_TYPES = [
     ("10", "CMR"),
     ("20", "Invoice"),

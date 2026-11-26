@@ -6,6 +6,7 @@ import markupsafe
 
 from odoo import api, fields, models
 from odoo.exceptions import UserError
+from odoo.tools.misc import format_date
 
 from ..models.etransport_api_extra import ETransportAPIExtra
 from ..models.l10n_ro_edi_stock_document import (
@@ -104,11 +105,37 @@ class L10nRoEdiStockActionWizard(models.TransientModel):
                 )
             )
 
+    def _check_uit_active(self):
+        """ANAF refuses an action on an expired UIT ("UIT inactiv"), and a
+        confirmation before the transport start. A vehicle change before the
+        start is left to ANAF (it may be accepted in the days before); a
+        deletion is accepted at any time."""
+        if self.action_type not in ("confirm", "modify_vehicle"):
+            return
+        record = self._get_etransport_record()
+        start = record.l10n_ro_edi_stock_transport_date
+        end = record.l10n_ro_edi_stock_uit_valid_until
+        if not start or not end:
+            return
+        today = fields.Date.context_today(self)
+        early = today < start and self.action_type == "confirm"
+        if early or today > end:
+            raise UserError(
+                self.env._(
+                    "UIT %(uit)s is valid from %(start)s to %(end)s. ANAF "
+                    "refuses this action outside the interval.",
+                    uit=self.uit,
+                    start=format_date(self.env, start),
+                    end=format_date(self.env, end),
+                )
+            )
+
     def action_execute(self):
         self.ensure_one()
         if not self.uit:
             raise UserError(self.env._("The transfer has no validated UIT."))
         self._check_uit_state()
+        self._check_uit_active()
         method = {
             "delete": self._send_delete,
             "confirm": self._send_confirm,

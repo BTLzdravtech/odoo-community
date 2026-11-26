@@ -1,11 +1,20 @@
 # Copyright 2026 NextERP Romania SRL
+from datetime import timedelta
+
 import requests
 
 from odoo import api, fields, models
-from odoo.exceptions import UserError
+from odoo.exceptions import UserError, ValidationError
+from odoo.tools.misc import format_date
+from odoo.tools.translate import LazyTranslate
 
 from odoo.addons.l10n_ro_edi_stock.models.etransport_api import ETransportAPI
 
+from .etransport_constants import (
+    TRANSPORT_DATE_MAX_DAYS,
+    UIT_VALIDITY_DAYS,
+    UIT_VALIDITY_DAYS_DEFAULT,
+)
 from .l10n_ro_edi_stock_document import (
     ACTION_FINAL_STATES,
     PENDING_ACTION_STATE,
@@ -13,6 +22,8 @@ from .l10n_ro_edi_stock_document import (
     l10n_ro_edi_stock_effective_document,
     l10n_ro_edi_stock_live_uit_document,
 )
+
+_lt_base = LazyTranslate("l10n_ro_edi_stock")
 
 
 class L10nRoEdiStockIntegrityMixin(models.AbstractModel):
@@ -22,6 +33,55 @@ class L10nRoEdiStockIntegrityMixin(models.AbstractModel):
 
     _name = "l10n.ro.edi.stock.integrity.mixin"
     _description = "eTransport notification integrity"
+
+    # Start of the transport, declared as dataTransport (date only). The UIT
+    # is valid from 00:00 of it; ANAF accepts it from today to today + 3.
+    l10n_ro_edi_stock_transport_date = fields.Date(
+        string="eTransport Transport Start",
+        default=lambda self: fields.Date.context_today(self),
+        copy=False,
+        help="Day the transport starts, declared to ANAF. Between today and "
+        "today + 3 days. The UIT is valid from this day.",
+    )
+
+    @api.constrains("l10n_ro_edi_stock_transport_date")
+    def _check_l10n_ro_edi_stock_transport_date(self):
+        today = fields.Date.context_today(self)
+        last = today + timedelta(days=TRANSPORT_DATE_MAX_DAYS)
+        for record in self:
+            date = record.l10n_ro_edi_stock_transport_date
+            if (
+                not date
+                or record.l10n_ro_edi_stock_post_outage
+                or today <= date <= last
+            ):
+                continue
+            raise ValidationError(
+                self.env._(
+                    "The eTransport transport start must be between %(first)s "
+                    "and %(last)s (ANAF accepts today to today + 3 days).",
+                    first=format_date(self.env, today),
+                    last=format_date(self.env, last),
+                )
+            )
+
+    # The UIT is valid from the transport start up to this day.
+    l10n_ro_edi_stock_uit_valid_until = fields.Date(
+        string="UIT Valid Until",
+        compute="_compute_l10n_ro_edi_stock_uit_valid_until",
+        help="The UIT is valid from the transport start up to this day.",
+    )
+
+    @api.depends("l10n_ro_edi_stock_transport_date", "l10n_ro_edi_stock_operation_type")
+    def _compute_l10n_ro_edi_stock_uit_valid_until(self):
+        for record in self:
+            start = record.l10n_ro_edi_stock_transport_date
+            days = UIT_VALIDITY_DAYS.get(
+                record.l10n_ro_edi_stock_operation_type, UIT_VALIDITY_DAYS_DEFAULT
+            )
+            record.l10n_ro_edi_stock_uit_valid_until = start and start + timedelta(
+                days=days - 1
+            )
 
     # Whether ANAF would accept a deletion / confirmation / vehicle change now:
     # the notification is validated (possibly with a changed vehicle), even if
@@ -78,6 +138,17 @@ class L10nRoEdiStockIntegrityMixin(models.AbstractModel):
     # Processing status of a deletion / confirmation / vehicle change
     ################################################################################
 
+    @api.model
+    def _l10n_ro_edi_stock_is_transient_error(self, error):
+        """Errors after which asking again later can still succeed: the
+        access token or the request limit, not ANAF's verdict."""
+        transient = {
+            str(_lt_base("Access token is forbidden.")),
+            str(_lt_base("Access token is unauthorized.")),
+            str(_lt_base("You reached the limit of requests. Please try again later.")),
+        }
+        return error in transient
+
     def _l10n_ro_edi_stock_fetch_pending_actions(self):
         """Ask ANAF how it processed the DEL / CON / MVH uploads waiting in
         ``stock_action_sent``, the same way the base module fetches a sent
@@ -105,6 +176,25 @@ class L10nRoEdiStockIntegrityMixin(models.AbstractModel):
                     document_load_id=document.l10n_ro_edi_stock_load_id,
                     session=session,
                 )
+                if "error" in result and not self._l10n_ro_edi_stock_is_transient_error(
+                    result["error"]
+                ):
+                    # ANAF answered and refused it (e.g. "UIT inactiv"): the
+                    # action is over, not pending.
+                    record._l10n_ro_edi_stock_write_document(
+                        document,
+                        {"state": "stock_sending_failed", "message": result["error"]},
+                    )
+                    record._message_log(
+                        body=self.env._(
+                            "eTransport %(action)s refused by ANAF (UIT: %(uit)s): "
+                            "%(message)s",
+                            action=document.l10n_ro_edi_stock_event_type,
+                            uit=document.l10n_ro_edi_stock_uit,
+                            message=result["error"],
+                        )
+                    )
+                    continue
                 if "error" in result:
                     record._message_log(
                         body=self.env._(

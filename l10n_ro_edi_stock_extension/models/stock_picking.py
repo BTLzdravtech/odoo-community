@@ -2,14 +2,20 @@
 import base64
 import logging
 import re
+from datetime import datetime, time
+
+from dateutil.relativedelta import relativedelta
 
 from odoo import api, fields, models
+from odoo.exceptions import UserError
 from odoo.tools.float_utils import float_compare, float_is_zero, float_round
+from odoo.tools.misc import format_date
 from odoo.tools.translate import LazyTranslate
 
 from .etransport_constants import (
     EU_COUNTRY_CODES,
     OPERATION_TYPE_TO_ALLOWED_SCOPE_CODES_FULL,
+    TRANSPORT_DATE_MAX_DAYS,
     VALID_COUNTRY_CODE_MAP,
     is_national,
     is_outgoing,
@@ -35,6 +41,14 @@ _logger = logging.getLogger(__name__)
 # l10n_ro_edi_stock's catalog and therefore match the errors it emits,
 # whatever language the user runs in.
 _lt_base = LazyTranslate("l10n_ro_edi_stock")
+
+
+class EtransportCheckResult(Exception):
+    """Carries the validation errors out of a dry-run send."""
+
+    def __init__(self, errors):
+        super().__init__(errors)
+        self.errors = errors
 
 
 # Pattern for extracting the street number from the "street" field
@@ -94,6 +108,53 @@ class StockPicking(models.Model):
         "of the next working day after the ANAF system is restored.",
     )
 
+    # Transport company declared to ANAF. Starts from the delivery method but
+    # stays editable on its own: the delivery method can no longer be changed
+    # once the transfer is done, and when the transport is found on a freight
+    # exchange the carrier is only known after the goods are prepared.
+    l10n_ro_edi_stock_transport_partner_id = fields.Many2one(
+        comodel_name="res.partner",
+        string="eTransport Carrier",
+        compute="_compute_l10n_ro_edi_stock_transport_partner_id",
+        store=True,
+        readonly=False,
+        precompute=True,
+        copy=False,
+        help="Transport company declared in the eTransport notification. "
+        "Filled from the delivery method; can be changed until the "
+        "notification is sent. Another carrier afterwards means deleting the "
+        "notification and sending a new one.",
+    )
+
+    @api.depends("carrier_id.l10n_ro_edi_stock_partner_id")
+    def _compute_l10n_ro_edi_stock_transport_partner_id(self):
+        for picking in self:
+            partner = picking.carrier_id.l10n_ro_edi_stock_partner_id
+            if partner:
+                picking.l10n_ro_edi_stock_transport_partner_id = partner
+
+    def _l10n_ro_edi_stock_validate_carrier(self):
+        # OVERRIDE l10n_ro_edi_stock: the base demands a delivery method (with
+        # its transport company) before validating the transfer. The carrier
+        # is now the eTransport Carrier field, checked when the notification
+        # is sent, so validating the goods no longer depends on it.
+        return
+
+    @api.model
+    def _l10n_ro_edi_stock_carrier_partner_errors(self, errors):
+        """The base's errors about the transport company's fields."""
+        prefixes = tuple(
+            str(_lt_base(msg)).split("%(")[0]
+            for msg in (
+                "The delivery carrier partner is missing the %(field_name)s field.",
+                (
+                    "The delivery carrier partner is missing following fields: "
+                    "%(field_names)s"
+                ),
+            )
+        )
+        return [error for error in errors if error.startswith(prefixes)]
+
     @api.model
     def _l10n_ro_edi_stock_validate_carrier_filter(self, picking):
         # ask for a carrier only when the transfer
@@ -124,6 +185,8 @@ class StockPicking(models.Model):
         "l10n_ro_edi_stock_end_customs_office",
         "l10n_ro_edi_stock_price_source",
         "l10n_ro_edi_stock_post_outage",
+        "l10n_ro_edi_stock_transport_partner_id",
+        "l10n_ro_edi_stock_transport_date",
         "l10n_ro_edi_stock_document_line_ids",
         "l10n_ro_edi_stock_previous_ids",
     }
@@ -180,7 +243,29 @@ class StockPicking(models.Model):
 
     @api.model
     def _l10n_ro_edi_stock_validate_data(self, data: dict):
+        # The base builds ``data`` without the record; the checks below
+        # (goods, weights, document lines, previous notifications) need it.
+        # Without this they were skipped on a single transfer and the user
+        # only got ANAF's raw rejection (BR-208, greutateBruta, ...).
+        picking_id = self.env.context.get("l10n_ro_edi_stock_extension_picking")
+        if picking_id and not data.get("_picking_record"):
+            data["_picking_record"] = self.browse(picking_id)
+        record = data.get("_picking_record")
+        if record:
+            data["transport_partner_id"] = record.l10n_ro_edi_stock_transport_partner_id
+        self._l10n_ro_edi_stock_set_transport_date(data)
         errors = super()._l10n_ro_edi_stock_validate_data(data=data)
+        if not data["transport_partner_id"]:
+            # one clear message instead of the base's missing VAT/City/Street
+            spurious = self._l10n_ro_edi_stock_carrier_partner_errors(errors)
+            errors = [error for error in errors if error not in spurious]
+            if not self.env.context.get("l10n_ro_edi_stock_skip_carrier_check"):
+                errors.insert(
+                    0,
+                    self.env._(
+                        "The eTransport Carrier (transport company) is not set."
+                    ),
+                )
         errors = self._l10n_ro_edi_stock_drop_foreign_counterparty_error(errors, data)
 
         op_type = data.get("l10n_ro_edi_stock_operation_type")
@@ -237,8 +322,8 @@ class StockPicking(models.Model):
 
         # BR-206/207/208: codTarifar / greutateNeta / valoareLeiFaraTva
         # are mandatory except for operations 60/70.
-        if needs_goods_full_data(op_type):
-            errors += self._l10n_ro_edi_stock_validate_goods_data(data)
+        errors = self._l10n_ro_edi_stock_drop_base_intrastat_error(errors, data)
+        errors += self._l10n_ro_edi_stock_validate_goods_data(data)
 
         # BR-218/020/029: greutateBruta required, > 0, >= greutateNeta
         errors += self._l10n_ro_edi_stock_validate_weights(data)
@@ -259,7 +344,171 @@ class StockPicking(models.Model):
                     )
                 )
 
+        errors += self._l10n_ro_edi_stock_validate_transport_date(data)
+
+        if self.env.context.get("l10n_ro_edi_stock_dry_run"):
+            # "Check eTransport" / transfer validation: stop here, before
+            # anything is sent or stored, and hand the errors back.
+            raise EtransportCheckResult(errors)
         return errors
+
+    @api.model
+    def _l10n_ro_edi_stock_set_transport_date(self, data):
+        """Date declared as ``dataTransport`` (date only: the UIT is valid
+        from 00:00 of it, and ANAF refuses a confirmation or a vehicle change
+        before that day).
+
+        The eTransport Transport Start (today when empty), for a correction
+        too: it cannot be changed once the UIT is alive.
+
+        The base sends ``data["scheduled_date"].date()``, so the date is put
+        there at noon to keep the same day in any timezone."""
+        record = data.get("_picking_record")
+        date = (
+            record and record.l10n_ro_edi_stock_transport_date
+        ) or fields.Date.context_today(self)
+        data["scheduled_date"] = datetime.combine(date, time(12))
+
+    @api.model
+    def _l10n_ro_edi_stock_validate_transport_date(self, data):
+        """ANAF only accepts a transport date from today to today + 3 days
+        (a correction keeps the original date; a post-outage declaration
+        is allowed late). See _l10n_ro_edi_stock_set_transport_date."""
+        ctx = self.env.context
+        if (
+            data.get("send_type") == "amend"
+            or ctx.get("l10n_ro_edi_stock_skip_date_check")
+            or not data.get("scheduled_date")
+        ):
+            return []
+        record = data.get("_picking_record")
+        if record and record.l10n_ro_edi_stock_post_outage:
+            return []
+        today = fields.Date.context_today(self)
+        date = fields.Date.context_today(self, timestamp=data["scheduled_date"])
+        last = today + relativedelta(days=TRANSPORT_DATE_MAX_DAYS)
+        if today <= date <= last:
+            return []
+        return [
+            self.env._(
+                "Transport date %(date)s is outside the interval ANAF accepts "
+                "(%(first)s - %(last)s). Change the eTransport Transport Start.",
+                date=format_date(self.env, date),
+                first=format_date(self.env, today),
+                last=format_date(self.env, last),
+            )
+        ]
+
+    @api.model
+    def _l10n_ro_edi_stock_drop_base_intrastat_error(self, errors, data):
+        """The base reports a missing intrastat code too; ours, per product,
+        says the same with the fix, so the base line is dropped."""
+        if "intrastat_code_id" not in self.env["product.product"]._fields:
+            return errors
+        names = {
+            line.product_id.name
+            for move in data["stock_move_ids"]
+            for line in move.move_line_ids
+            if not line.product_id.intrastat_code_id.code
+        }
+        if not names:
+            return errors
+        (single,) = names if len(names) == 1 else (None,)
+        spurious = {
+            str(
+                _lt_base(
+                    "Products %(names)s are missing the intrastat code value.",
+                    names=", ".join(names),
+                )
+            ),
+        }
+        if single:
+            spurious.add(
+                str(
+                    _lt_base(
+                        "Product %(name)s is missing the intrastat code value.",
+                        name=single,
+                    )
+                )
+            )
+        return [error for error in errors if error not in spurious]
+
+    ################################################################################
+    # Check before sending / before validating the transfer
+    ################################################################################
+
+    def _l10n_ro_edi_stock_check_errors(self, skip_date=False, skip_carrier=False):
+        """Everything that would stop the notification, without sending it."""
+        self.ensure_one()
+        try:
+            self.with_context(
+                l10n_ro_edi_stock_dry_run=True,
+                l10n_ro_edi_stock_skip_date_check=skip_date,
+                l10n_ro_edi_stock_skip_carrier_check=skip_carrier,
+            )._l10n_ro_edi_stock_send_etransport_document("send")
+        except EtransportCheckResult as result:
+            return result.errors
+        except UserError as error:
+            return [str(error.args[0])]
+        return []
+
+    def action_l10n_ro_edi_stock_check(self):
+        self.ensure_one()
+        errors = self._l10n_ro_edi_stock_check_errors()
+        if errors:
+            raise UserError(
+                self.env._(
+                    "%(name)s cannot be sent to eTransport yet:\n\n%(errors)s",
+                    name=self.display_name,
+                    errors="\n".join(f"- {e}" for e in errors),
+                )
+            )
+        return {
+            "type": "ir.actions.client",
+            "tag": "display_notification",
+            "params": {
+                "type": "success",
+                "message": self.env._("eTransport data is complete, it can be sent."),
+            },
+        }
+
+    def _l10n_ro_edi_stock_pickings_to_check_on_validate(self):
+        """Transfers set up for eTransport (operation type chosen) whose
+        notification is not sent yet."""
+        return self.filtered(
+            lambda p: (
+                p.l10n_ro_edi_stock_enable
+                and p.l10n_ro_edi_stock_operation_type
+                and not p.batch_id
+                and p.l10n_ro_edi_stock_state in (False, "stock_sending_failed")
+            )
+        )
+
+    def button_validate(self):
+        # Block validation when the eTransport data is incomplete, so the
+        # notification can still be sent afterwards. The date is not checked
+        # here: the goods may be validated after they left.
+        to_check = self._l10n_ro_edi_stock_pickings_to_check_on_validate()
+        # The carrier is not checked here either: it may only be found after
+        # the goods are ready (freight exchange) and is set before sending.
+        messages = []
+        for picking in to_check:
+            errors = picking._l10n_ro_edi_stock_check_errors(
+                skip_date=True, skip_carrier=True
+            )
+            if errors:
+                lines = "\n".join(f"- {e}" for e in errors)
+                messages.append(f"{picking.display_name}:\n{lines}")
+        if messages:
+            raise UserError(
+                self.env._(
+                    "The eTransport data is incomplete, so the notification "
+                    "could not be sent:\n\n%(errors)s\n\nComplete it, or clear "
+                    "the eTransport Operation Type if no notification is needed.",
+                    errors="\n\n".join(messages),
+                )
+            )
+        return super().button_validate()
 
     @api.model
     def _l10n_ro_edi_stock_base_foreign_location_error(self, location):
@@ -323,82 +572,59 @@ class StockPicking(models.Model):
 
     @api.model
     def _l10n_ro_edi_stock_validate_goods_data(self, data):
-        errors = []
+        """One readable line per product, listing everything ANAF would
+        refuse for it (BR-206/207/208/218/020/029), with where to fix it."""
         picking = data.get("_picking_record")
         if not picking:
-            return errors
-
-        products_missing_tarifar = set()
-        products_missing_value = set()
-        products_missing_weight = set()
-
+            return []
+        op_type = data["l10n_ro_edi_stock_operation_type"]
+        full = needs_goods_full_data(op_type)
+        problems = {}
         for move in data["stock_move_ids"]:
             product = move.product_id
-            tarifar = self._l10n_ro_edi_stock_get_codtarifar(product)
-            if not tarifar:
-                products_missing_tarifar.add(product.display_name)
-
-            net_weight = picking._l10n_ro_edi_stock_compute_net_weight(move)
-            if float_is_zero(net_weight, precision_digits=2):
-                products_missing_weight.add(product.display_name)
-
-            value = picking._l10n_ro_edi_stock_compute_value(
-                move, data["l10n_ro_edi_stock_operation_type"]
-            )
-            if float_compare(value, 0.0, precision_digits=2) <= 0:
-                products_missing_value.add(product.display_name)
-
-        if products_missing_tarifar:
-            errors.append(
-                self.env._(
-                    "The following products are missing a tariff (NC8) code: %(names)s",
-                    names=", ".join(sorted(products_missing_tarifar)),
+            missing = problems.setdefault(product.display_name, [])
+            if full and not self._l10n_ro_edi_stock_get_codtarifar(product):
+                missing.append(
+                    self.env._("no tariff (NC8) code - set the Intrastat code")
                 )
-            )
-        if products_missing_weight:
-            errors.append(
-                self.env._(
-                    "The following products have 0 net weight: %(names)s",
-                    names=", ".join(sorted(products_missing_weight)),
-                )
-            )
-        if products_missing_value:
-            errors.append(
-                self.env._(
-                    "The following products have 0 value "
-                    "(check the price source): %(names)s",
-                    names=", ".join(sorted(products_missing_value)),
-                )
-            )
-        return errors
-
-    @api.model
-    def _l10n_ro_edi_stock_validate_weights(self, data):
-        errors = []
-        picking = data.get("_picking_record")
-        if not picking:
-            return errors
-
-        for move in data["stock_move_ids"]:
             net = picking._l10n_ro_edi_stock_compute_net_weight(move)
             gross = picking._l10n_ro_edi_stock_compute_gross_weight(move)
             if float_is_zero(gross, precision_digits=2):
-                errors.append(
+                missing.append(self.env._("no weight - set the product Weight"))
+            elif full and float_is_zero(net, precision_digits=2):
+                missing.append(self.env._("no net weight - set the product Weight"))
+            elif float_compare(gross, net, precision_digits=2) < 0:
+                missing.append(
                     self.env._(
-                        "Gross weight must be > 0 for %(p)s.",
-                        p=move.product_id.display_name,
-                    )
-                )
-            if float_compare(gross, net, precision_digits=2) < 0:
-                errors.append(
-                    self.env._(
-                        "Gross weight (%(g)s) must be >= net weight (%(n)s) for %(p)s.",
+                        "gross weight %(g)s kg is below net weight %(n)s kg",
                         g=gross,
                         n=net,
-                        p=move.product_id.display_name,
                     )
                 )
-        return errors
+            if full:
+                value = picking._l10n_ro_edi_stock_compute_value(move, op_type)
+                if float_compare(value, 0.0, precision_digits=2) <= 0:
+                    missing.append(
+                        self.env._(
+                            "value is 0 - check the price on the order line "
+                            "or the eTransport price source"
+                        )
+                    )
+        return [
+            self.env._(
+                "Product %(product)s: %(problems)s",
+                product=name,
+                problems="; ".join(dict.fromkeys(items)),
+            )
+            for name, items in problems.items()
+            if items
+        ]
+
+    @api.model
+    def _l10n_ro_edi_stock_validate_weights(self, data):
+        # Merged into _l10n_ro_edi_stock_validate_goods_data (one line per
+        # product); kept so overrides elsewhere keep working.
+        return []
 
     @api.model
     def _l10n_ro_edi_stock_validate_doc_lines(self, picking):
@@ -944,12 +1170,11 @@ class StockPicking(models.Model):
                 "denumireOrgTransport": "name",
             }.get(attribute)
             if carrier_fname:
-                carrier = self.carrier_id.l10n_ro_edi_stock_partner_id
+                carrier = self.l10n_ro_edi_stock_transport_partner_id
                 return (
                     self.env._(
-                        "Transport company %(partner)s (delivery method %(carrier)s)",
+                        "Transport company %(partner)s (eTransport Carrier)",
                         partner=carrier.name,
-                        carrier=self.carrier_id.name,
                     ),
                     label("res.partner", carrier_fname),
                 )
